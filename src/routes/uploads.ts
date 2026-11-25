@@ -1,0 +1,20 @@
+import { Router } from "express";
+import { env } from "../config/env";
+import { authenticate } from "../middleware/auth";
+import { imageUpload } from "../middleware/upload";
+import { asyncHandler } from "../utils/async-handler";
+import { HttpError } from "../utils/http-error";
+const router = Router();
+router.post("/image", authenticate, imageUpload.single("image"), asyncHandler(async (req, res) => {
+  if (!env.imgbbApiKey) throw new HttpError(503, "Image hosting is not configured on the server.");
+  if (!req.file) throw new HttpError(400, "Please select an image file.");
+  const body = new FormData();
+  body.append("image", req.file.buffer.toString("base64"));
+  const url = new URL("https://api.imgbb.com/1/upload");
+  url.searchParams.set("key", env.imgbbApiKey);
+  const response = await fetch(url, { method: "POST", body });
+  const result = await response.json() as { success?: boolean; data?: { url?: string; display_url?: string }; error?: { message?: string } };
+  if (!response.ok || !result.success || !result.data?.url) throw new HttpError(502, result.error?.message || "Image host rejected the upload.");
+  res.status(201).json({ url: result.data.url, displayUrl: result.data.display_url || result.data.url });
+}));
+export default router;
